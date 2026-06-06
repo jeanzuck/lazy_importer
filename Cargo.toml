@@ -24,3 +24,7 @@ const-random = "0.1.18"
 [features]
 default = []
 case-insensitive = []
+
+[package.metadata.docs.rs]
+targets = ["x86_64-pc-windows-msvc"]
+rustdoc-args = ["--cfg", "docsrs"]

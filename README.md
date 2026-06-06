@@ -1,5 +1,9 @@
 # lazy_importer
 
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+[![crates.io](https://img.shields.io/crates/v/lazy_importer.svg)](https://crates.io/crates/lazy_importer)
+[![docs.rs](https://docs.rs/lazy_importer/badge.svg)](https://docs.rs/lazy_importer)
+
 `lazy_importer` is a `no_std` Rust port of Justas Masiulis's original C++
 lazy_importer. It resolves already-loaded Windows modules and exports by
 hashing names and walking the process PEB directly, keeping Windows internals in

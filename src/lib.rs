@@ -2,7 +2,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![doc = include_str!("../README.md")]
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(docsrs)))]
 compile_error!("lazy_importer supports Windows targets only.");
 
 #[cfg(test)]
