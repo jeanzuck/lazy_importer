@@ -5,6 +5,18 @@ edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
 description = "Rust port of Justas Masiulis's lazy_importer for Windows module and export resolution."
+authors = ["jeanzuck"]
+documentation = "https://docs.rs/lazy_importer"
+repository = "https://github.com/jeanzuck/lazy_importer"
+readme = "README.md"
+keywords = [
+    "obfuscation",
+    "windows",
+    "reverse-engineering",
+    "static-analysis",
+    "no-std",
+]
+categories = ["no-std"]
 
 [dependencies]
 const-random = "0.1.18"
