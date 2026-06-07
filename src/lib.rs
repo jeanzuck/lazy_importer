@@ -18,8 +18,8 @@ mod types;
 pub mod __private {
     pub use const_random::const_random;
 
+    pub use crate::hash::cache_key;
     pub use crate::hash::khash;
-    pub use crate::resolver::Cache;
 }
 
 pub use resolver::{LazyFunction, LazyModule, ModuleHandle};
@@ -55,6 +55,20 @@ mod windows_tests {
         assert!(module.is_some());
     }
 
+    #[test]
+    fn module_macro_call_sites_share_global_cache_key() {
+        let first = crate::li_module!("KERNEL32.DLL");
+        let second = crate::li_module!("KERNEL32.DLL");
+
+        assert!(!first.cache_enabled_for_tests());
+        assert!(first.cached().cache_enabled_for_tests());
+        assert_eq!(
+            first.cache_key_for_tests(),
+            second.cache_key_for_tests(),
+            "same module name should map to one global cache slot"
+        );
+    }
+
     #[cfg(feature = "case-insensitive")]
     #[test]
     fn resolves_loaded_module_case_insensitively() {
@@ -76,6 +90,20 @@ mod windows_tests {
         let resolved = unsafe { function() };
 
         assert_eq!(resolved, direct);
+    }
+
+    #[test]
+    fn function_macro_call_sites_share_global_cache_key() {
+        let first = crate::li_fn!(GetCurrentProcessId);
+        let second = crate::li_fn!("GetCurrentProcessId");
+
+        assert!(!first.cache_enabled_for_tests());
+        assert!(first.cached().cache_enabled_for_tests());
+        assert_eq!(
+            first.cache_key_for_tests(),
+            second.cache_key_for_tests(),
+            "same export name should map to one global cache slot"
+        );
     }
 
     #[test]

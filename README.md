@@ -15,15 +15,16 @@ small unsafe modules and exposing a typed API at the edge.
 - Resolve exports by hash across loaded modules with `li_fn!`.
 - Resolve exports inside a known module with `address_in`, `raw_address_in`, or
   `get_in`.
-- Cache global module and function resolution per macro call site by default.
+- Resolve global module and function lookups fresh by default, with opt-in
+  global caching by name via `cached`.
 - Follow forwarded exports by default in `address`, `get`, `address_in`, and
   `get_in`.
 - Resolve API-set forwarded exports such as `api-ms-win-*` and `ext-ms-*`
   contracts through the process API set map.
 - Expose `raw_address` and `raw_address_in` for lookups that do not follow
   forwarded exports.
-- Fold ASCII case for module and export hashing with the `case-insensitive`
-  Cargo feature.
+- Fold ASCII case for module/export hashing and cache keys with the
+  `case-insensitive` Cargo feature.
 - Generate compile-time-random hash offsets with `const-random`; set
   `CONST_RANDOM_SEED` when deterministic build output is required.
 - Fail at compile time on non-Windows targets.
@@ -66,10 +67,17 @@ let kernel32 = lazy_importer::li_module!("KERNEL32.DLL")
     .expect("kernel32 should be loaded");
 ```
 
-Each macro invocation has its own static cache. Calling `get` again from the
-same `li_module!` call site reuses the cached module handle after the first
-successful lookup. There is no separate `cached` method because global module
-lookups are cached by default.
+By default, every `get` call resolves the module again. Use `cached` when you
+want all `li_module!` calls for the same module name to reuse the first
+successfully resolved module handle. With the `case-insensitive` feature, module
+cache keys fold ASCII case too:
+
+```rust,no_run
+let kernel32 = lazy_importer::li_module!("KERNEL32.DLL")
+    .cached()
+    .get()
+    .expect("kernel32 should be loaded");
+```
 
 ## Functions
 
@@ -87,10 +95,25 @@ let typed = unsafe {
 };
 ```
 
-`address` and `get` follow forwarded exports by default and cache the resolved
-address per macro call site. Use `raw_address` when you need the raw export
-address without following forwarded exports. There is no separate `cached`
-method because global function lookups are cached by default.
+`address` and `get` follow forwarded exports by default. By default, each call
+resolves the function again. Use `cached` when you want all `li_fn!` calls for
+the same export name to reuse the first successfully resolved global address.
+With the `case-insensitive` feature, export cache keys fold ASCII case too:
+
+```rust,no_run
+type GetCurrentProcessId = unsafe extern "system" fn() -> u32;
+
+let function = unsafe {
+    lazy_importer::li_fn!(GetCurrentProcessId)
+        .cached()
+        .get::<GetCurrentProcessId>()
+        .expect("export should resolve")
+};
+```
+
+Use `raw_address` when you need the raw export address without following
+forwarded exports. `raw_address` always resolves fresh; `cached` only affects
+the forwarded global lookup used by `address` and `get`.
 
 ## Known Modules
 
@@ -115,8 +138,23 @@ let function = unsafe {
 ```
 
 `address_in` and `get_in` follow forwarded exports. Use `raw_address_in` for the
-raw in-module export address. In-module lookups are not cached by the macro call
-site cache.
+raw in-module export address. In-module lookups are not stored in the global
+cache because they depend on the module handle passed to the call.
+
+## Caching
+
+Calling `cached` opts into a process-wide cache shared by all macro call sites
+with the same module or export name. Modules and functions use separate caches,
+and only successful `LazyModule::get`, `LazyFunction::address`, and
+`LazyFunction::get` lookups are stored.
+
+Cache keys are derived from the module or export name at compile time and follow
+the crate's active case-sensitivity setting. The cache stores keys and resolved
+pointers, not the original strings.
+
+The cache is a fixed-size `no_std` table. If the table has no available slot, the
+lookup still returns the freshly resolved value, but that value is not stored for
+future calls.
 
 ## Case Sensitivity
 

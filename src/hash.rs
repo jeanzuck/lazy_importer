@@ -1,6 +1,8 @@
 //! Hashing primitives shared by the resolver and public macros.
 
 const FNV_PRIME: u32 = 16_777_619;
+const CACHE_KEY_OFFSET_A: u32 = 2_166_136_261;
+const CACHE_KEY_OFFSET_B: u32 = 0x811c_9dc5 ^ 0xa5a5_5a5a;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ForwardedHashes {
@@ -61,6 +63,20 @@ const fn khash_impl(input: &str, offset: u32) -> u32 {
 #[inline(always)]
 pub const fn khash(input: &str, offset: u32) -> u64 {
     ((offset as u64) << 32) | (khash_impl(input, offset) as u64)
+}
+
+#[inline(always)]
+pub const fn cache_key(input: &str) -> usize {
+    let key = if core::mem::size_of::<usize>() >= core::mem::size_of::<u64>() {
+        let upper = khash_impl(input, CACHE_KEY_OFFSET_A) as u64;
+        let lower = khash_impl(input, CACHE_KEY_OFFSET_B) as u64;
+
+        ((upper << 32) | lower) as usize
+    } else {
+        khash_impl(input, CACHE_KEY_OFFSET_A) as usize
+    };
+
+    if key == 0 { 1 } else { key }
 }
 
 #[inline]
@@ -205,9 +221,30 @@ mod tests {
     }
 
     #[test]
+    fn cache_key_is_stable_and_non_zero() {
+        assert_ne!(cache_key("GetCurrentProcessId"), 0);
+        assert_eq!(
+            cache_key("GetCurrentProcessId"),
+            cache_key("GetCurrentProcessId")
+        );
+    }
+
+    #[test]
     fn case_sensitivity_follows_feature_flag() {
         let upper = khash_impl("KERNEL32.DLL", FNV_OFFSET_BASIS);
         let lower = khash_impl("kernel32.dll", FNV_OFFSET_BASIS);
+
+        if cfg!(feature = "case-insensitive") {
+            assert_eq!(upper, lower);
+        } else {
+            assert_ne!(upper, lower);
+        }
+    }
+
+    #[test]
+    fn cache_key_case_sensitivity_follows_feature_flag() {
+        let upper = cache_key("KERNEL32.DLL");
+        let lower = cache_key("kernel32.dll");
 
         if cfg!(feature = "case-insensitive") {
             assert_eq!(upper, lower);
