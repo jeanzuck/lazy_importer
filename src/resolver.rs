@@ -408,7 +408,7 @@ unsafe fn resolve_forwarded_export(
     while depth < MAX_FORWARD_DEPTH {
         depth += 1;
 
-        match unsafe { resolve_forwarded_hashes_in_loaded_module(hashes, offset, false) } {
+        match unsafe { resolve_forwarded_hashes_in_loaded_module(hashes, offset, true) } {
             Some(ForwardedResolution::Address(address)) => return Some(address),
             Some(ForwardedResolution::Forwarded(next)) => {
                 hashes = next.hashes;

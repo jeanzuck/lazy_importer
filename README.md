@@ -1,5 +1,7 @@
 # lazy_importer
 
+A Rust rewrite of [Justas Masiulis's original C++ lazy_importer](https://github.com/JustasMasiulis/lazy_importer) with enhancements.
+
 [![Rust](https://img.shields.io/badge/rust-stable%201.85+-orange.svg)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![crates.io](https://img.shields.io/crates/v/lazy_importer.svg)](https://crates.io/crates/lazy_importer)
@@ -8,8 +10,6 @@
 A `no_std` Rust library that resolves Windows API functions at runtime —
 without linking to import libraries. It walks the PEB loader list and PE export
 tables directly, so function names never appear in your binary's import table.
-
-Rust port of [Justas Masiulis's original C++ lazy_importer](https://github.com/JustasMasiulis/lazy_importer).
 
 ## Quick Start
 

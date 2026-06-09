@@ -185,7 +185,7 @@ pub(crate) unsafe fn hash_forwarded(mut ptr: *const u8, offset: u32) -> Option<F
             break;
         }
 
-        module_hash = hash_single(module_hash, byte);
+        module_hash = hash_single_with(module_hash, byte, false);
         ptr = unsafe { ptr.add(1) };
         module_name_len += 1;
     }
