@@ -81,7 +81,7 @@ mod windows_tests {
         type GetCurrentProcessIdFn = unsafe extern "system" fn() -> u32;
 
         let function = unsafe {
-            crate::li_fn!(GetCurrentProcessId)
+            crate::li_fn!("GetCurrentProcessId")
                 .get::<GetCurrentProcessIdFn>()
                 .expect("GetCurrentProcessId should resolve")
         };
@@ -94,7 +94,7 @@ mod windows_tests {
 
     #[test]
     fn function_macro_call_sites_share_global_cache_key() {
-        let first = crate::li_fn!(GetCurrentProcessId);
+        let first = crate::li_fn!("GetCurrentProcessId");
         let second = crate::li_fn!("GetCurrentProcessId");
 
         assert!(!first.cache_enabled_for_tests());
@@ -114,7 +114,7 @@ mod windows_tests {
             .get()
             .expect("kernel32 should resolve");
         let function = unsafe {
-            crate::li_fn!(GetCurrentProcessId)
+            crate::li_fn!("GetCurrentProcessId")
                 .get_in::<GetCurrentProcessIdFn>(kernel32)
                 .expect("GetCurrentProcessId should resolve in kernel32")
         };
@@ -129,7 +129,7 @@ mod windows_tests {
 
         core::hint::black_box(MessageBoxA as *const ());
 
-        let lazy_message_box = crate::li_fn!(MessageBoxA);
+        let lazy_message_box = crate::li_fn!("MessageBoxA");
         let address = lazy_message_box
             .address()
             .expect("MessageBoxA address should resolve");

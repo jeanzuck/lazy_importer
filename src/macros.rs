@@ -11,13 +11,6 @@ macro_rules! li_module {
 
 #[macro_export]
 macro_rules! li_fn {
-    ($name:ident) => {{
-        const OFFSET: u32 = $crate::__private::const_random!(u32);
-        const HASH: u64 = $crate::__private::khash(stringify!($name), OFFSET);
-        const CACHE_KEY: usize = $crate::__private::cache_key(stringify!($name));
-
-        $crate::LazyFunction::<HASH>::with_cache_key(CACHE_KEY)
-    }};
     ($name:literal) => {{
         const OFFSET: u32 = $crate::__private::const_random!(u32);
         const HASH: u64 = $crate::__private::khash($name, OFFSET);

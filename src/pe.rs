@@ -15,6 +15,7 @@ pub(crate) struct ExportsDirectory {
 }
 
 impl ExportsDirectory {
+    #[inline(always)]
     pub(crate) unsafe fn new(base: NonNull<c_void>) -> Option<Self> {
         let base = base.cast::<u8>();
         let dos = unsafe { &*base.as_ptr().cast::<ImageDosHeader>() };

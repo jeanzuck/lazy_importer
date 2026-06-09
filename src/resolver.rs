@@ -325,6 +325,7 @@ unsafe fn assume_function_type<F: Copy>(address: NonNull<c_void>) -> F {
     unsafe { core::mem::transmute_copy(&address) }
 }
 
+#[inline(always)]
 unsafe fn resolve_module_by_hash(pair: u64) -> Option<ModuleHandle> {
     let offset = hash::get_offset(pair);
     let target_hash = hash::get_hash(pair);
@@ -342,6 +343,7 @@ unsafe fn resolve_module_by_hash(pair: u64) -> Option<ModuleHandle> {
     None
 }
 
+#[inline(always)]
 unsafe fn resolve_function_by_hash(pair: u64, resolve_forwarded: bool) -> Option<NonNull<c_void>> {
     let offset = hash::get_offset(pair);
     let target_hash = hash::get_hash(pair);
@@ -372,6 +374,7 @@ unsafe fn resolve_function_by_hash(pair: u64, resolve_forwarded: bool) -> Option
     None
 }
 
+#[inline(always)]
 unsafe fn resolve_function_in_module(
     pair: u64,
     module: ModuleHandle,
@@ -392,6 +395,7 @@ unsafe fn resolve_function_in_module(
     Some(address)
 }
 
+#[inline(always)]
 unsafe fn resolve_forwarded_export(
     forwarder: *const u8,
     offset: u32,
@@ -457,6 +461,7 @@ struct ForwardedExport {
     parent_name: UnicodeString,
 }
 
+#[inline(always)]
 unsafe fn resolve_forwarded_hashes_in_loaded_module(
     hashes: hash::ForwardedHashes,
     offset: u32,

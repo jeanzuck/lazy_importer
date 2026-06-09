@@ -36,6 +36,12 @@ const fn normalize_ascii(byte: u8, case_sensitive: bool) -> u8 {
     }
 }
 
+/// Unconditional ASCII case folding (lowercases `A-Z`).
+#[inline(always)]
+pub(crate) const fn fold_ascii(byte: u8) -> u8 {
+    normalize_ascii(byte, false)
+}
+
 #[inline(always)]
 const fn hash_single_with(value: u32, byte: u8, case_sensitive: bool) -> u32 {
     (value ^ (normalize_ascii(byte, case_sensitive) as u32)).wrapping_mul(FNV_PRIME)
@@ -67,14 +73,14 @@ pub const fn khash(input: &str, offset: u32) -> u64 {
 
 #[inline(always)]
 pub const fn cache_key(input: &str) -> usize {
-    let key = if core::mem::size_of::<usize>() >= core::mem::size_of::<u64>() {
+    #[cfg(target_pointer_width = "64")]
+    let key = {
         let upper = khash_impl(input, CACHE_KEY_OFFSET_A) as u64;
         let lower = khash_impl(input, CACHE_KEY_OFFSET_B) as u64;
-
         ((upper << 32) | lower) as usize
-    } else {
-        khash_impl(input, CACHE_KEY_OFFSET_A) as usize
     };
+    #[cfg(target_pointer_width = "32")]
+    let key = { khash_impl(input, CACHE_KEY_OFFSET_A) as usize };
 
     if key == 0 { 1 } else { key }
 }
@@ -118,6 +124,26 @@ unsafe fn hash_wide_with(
     value
 }
 
+/// Returns the length in `u16` units without a trailing `.dll` suffix
+/// (case-insensitive comparison).
+#[inline]
+pub(crate) unsafe fn len_without_dll_suffix_u16(ptr: *const u16, len_u16: usize) -> usize {
+    if len_u16 < 4 {
+        return len_u16;
+    }
+    let suffix = len_u16 - 4;
+    let dot = unsafe { *ptr.add(suffix) } as u8;
+    let d = unsafe { *ptr.add(suffix + 1) } as u8;
+    let l1 = unsafe { *ptr.add(suffix + 2) } as u8;
+    let l2 = unsafe { *ptr.add(suffix + 3) } as u8;
+
+    if dot == b'.' && fold_ascii(d) == b'd' && fold_ascii(l1) == b'l' && fold_ascii(l2) == b'l' {
+        suffix
+    } else {
+        len_u16
+    }
+}
+
 #[inline]
 pub(crate) unsafe fn hash_wide_without_dll(ptr: *const u16, len_u16: usize, offset: u32) -> u32 {
     unsafe { hash_wide_without_dll_with(ptr, len_u16, offset, default_case_sensitive()) }
@@ -139,23 +165,7 @@ unsafe fn hash_wide_without_dll_with(
     offset: u32,
     case_sensitive: bool,
 ) -> u32 {
-    let mut len_u16 = len_u16;
-    if len_u16 >= 4 {
-        let suffix = len_u16 - 4;
-        let dot = unsafe { *ptr.add(suffix) } as u8;
-        let d = unsafe { *ptr.add(suffix + 1) } as u8;
-        let l1 = unsafe { *ptr.add(suffix + 2) } as u8;
-        let l2 = unsafe { *ptr.add(suffix + 3) } as u8;
-
-        if dot == b'.'
-            && normalize_ascii(d, false) == b'd'
-            && normalize_ascii(l1, false) == b'l'
-            && normalize_ascii(l2, false) == b'l'
-        {
-            len_u16 -= 4;
-        }
-    }
-
+    let len_u16 = unsafe { len_without_dll_suffix_u16(ptr, len_u16) };
     unsafe { hash_wide_with(ptr, len_u16, offset, case_sensitive) }
 }
 

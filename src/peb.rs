@@ -8,14 +8,23 @@ const MAX_API_SET_ENTRIES: u32 = 8192;
 const MAX_API_SET_VALUES: u32 = 64;
 const MAX_MODULES: usize = 4096;
 
+/// Offset from the segment register (gs/fs) or TEB to the PEB pointer.
+#[cfg(target_arch = "x86_64")]
+const PEB_TEB_OFFSET: u32 = 0x60;
+#[cfg(target_arch = "x86")]
+const PEB_TEB_OFFSET: u32 = 0x30;
+#[cfg(target_arch = "aarch64")]
+const PEB_TEB_OFFSET: u32 = 0x60;
+
 #[cfg(all(windows, target_arch = "x86_64"))]
 #[inline]
 pub(crate) unsafe fn peb() -> *const Peb {
     let peb: *const Peb;
     unsafe {
         core::arch::asm!(
-            "mov {}, gs:[0x60]",
-            out(reg) peb,
+            "mov {peb}, gs:[{offset}]",
+            peb = out(reg) peb,
+            offset = const PEB_TEB_OFFSET,
             options(nostack, preserves_flags, readonly)
         );
     }
@@ -28,8 +37,9 @@ pub(crate) unsafe fn peb() -> *const Peb {
     let peb: *const Peb;
     unsafe {
         core::arch::asm!(
-            "mov {}, fs:[0x30]",
-            out(reg) peb,
+            "mov {peb}, fs:[{offset}]",
+            peb = out(reg) peb,
+            offset = const PEB_TEB_OFFSET,
             options(nostack, preserves_flags, readonly)
         );
     }
@@ -48,13 +58,7 @@ pub(crate) unsafe fn peb() -> *const Peb {
         );
     }
 
-    unsafe { *((teb + 0x60) as *const *const Peb) }
-}
-
-#[cfg(not(windows))]
-#[inline]
-pub(crate) unsafe fn peb() -> *const Peb {
-    core::ptr::null()
+    unsafe { *((teb + PEB_TEB_OFFSET as usize) as *const *const Peb) }
 }
 
 #[cfg(all(
@@ -252,7 +256,7 @@ unsafe fn wide_equals_ascii_case_insensitive(
         let wide_byte = unsafe { *wide.add(index) } as u8;
         let ascii_byte = unsafe { *ascii.add(index) };
 
-        if fold_ascii(wide_byte) != fold_ascii(ascii_byte) {
+        if hash::fold_ascii(wide_byte) != hash::fold_ascii(ascii_byte) {
             return false;
         }
 
@@ -277,7 +281,7 @@ unsafe fn wide_equals_wide_case_insensitive(
         let left_byte = unsafe { *left.add(index) } as u8;
         let right_byte = unsafe { *right.add(index) } as u8;
 
-        if fold_ascii(left_byte) != fold_ascii(right_byte) {
+        if hash::fold_ascii(left_byte) != hash::fold_ascii(right_byte) {
             return false;
         }
 
@@ -296,37 +300,10 @@ unsafe fn wide_equals_wide_case_insensitive_without_dll(
     unsafe {
         wide_equals_wide_case_insensitive(
             left,
-            len_without_dll(left, left_len),
+            hash::len_without_dll_suffix_u16(left, left_len),
             right,
-            len_without_dll(right, right_len),
+            hash::len_without_dll_suffix_u16(right, right_len),
         )
-    }
-}
-
-unsafe fn len_without_dll(ptr: *const u16, len: usize) -> usize {
-    if len < 4 {
-        return len;
-    }
-
-    let suffix = len - 4;
-    let dot = unsafe { *ptr.add(suffix) } as u8;
-    let d = unsafe { *ptr.add(suffix + 1) } as u8;
-    let l1 = unsafe { *ptr.add(suffix + 2) } as u8;
-    let l2 = unsafe { *ptr.add(suffix + 3) } as u8;
-
-    if dot == b'.' && fold_ascii(d) == b'd' && fold_ascii(l1) == b'l' && fold_ascii(l2) == b'l' {
-        suffix
-    } else {
-        len
-    }
-}
-
-#[inline]
-const fn fold_ascii(byte: u8) -> u8 {
-    if byte >= b'A' && byte <= b'Z' {
-        byte | (1 << 5)
-    } else {
-        byte
     }
 }
 

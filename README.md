@@ -1,171 +1,270 @@
 # lazy_importer
 
+[![Rust](https://img.shields.io/badge/rust-stable%201.85+-orange.svg)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![crates.io](https://img.shields.io/crates/v/lazy_importer.svg)](https://crates.io/crates/lazy_importer)
 [![docs.rs](https://docs.rs/lazy_importer/badge.svg)](https://docs.rs/lazy_importer)
 
-`lazy_importer` is a `no_std` Rust port of Justas Masiulis's original C++
-lazy_importer. It resolves already-loaded Windows modules and exports by
-hashing names and walking the process PEB directly, keeping Windows internals in
-small unsafe modules and exposing a typed API at the edge.
+A `no_std` Rust library that resolves Windows API functions at runtime —
+without linking to import libraries. It walks the PEB loader list and PE export
+tables directly, so function names never appear in your binary's import table.
 
-## Features
+Rust port of [Justas Masiulis's original C++ lazy_importer](https://github.com/JustasMasiulis/lazy_importer).
 
-- Resolve loaded modules by hash with `li_module!`.
-- Resolve exports by hash across loaded modules with `li_fn!`.
-- Resolve exports inside a known module with `address_in`, `raw_address_in`, or
-  `get_in`.
-- Resolve global module and function lookups fresh by default, with opt-in
-  global caching by name via `cached`.
-- Follow forwarded exports by default in `address`, `get`, `address_in`, and
-  `get_in`.
-- Resolve API-set forwarded exports such as `api-ms-win-*` and `ext-ms-*`
-  contracts through the process API set map.
-- Expose `raw_address` and `raw_address_in` for lookups that do not follow
-  forwarded exports.
-- Fold ASCII case for module/export hashing and cache keys with the
-  `case-insensitive` Cargo feature.
-- Generate compile-time-random hash offsets with `const-random`; set
-  `CONST_RANDOM_SEED` when deterministic build output is required.
-- Fail at compile time on non-Windows targets.
+## Quick Start
 
-Resolution is implemented for Windows x86, x86_64, and aarch64.
-
-## Basic Usage
-
-```rust,no_run
-type GetCurrentProcessId = unsafe extern "system" fn() -> u32;
-
-let get_current_process_id = unsafe {
-    lazy_importer::li_fn!(GetCurrentProcessId)
-        .get::<GetCurrentProcessId>()
-        .expect("GetCurrentProcessId should be loaded")
-};
-
-let pid = unsafe { get_current_process_id() };
+```toml
+# Cargo.toml
+[dependencies]
+lazy_importer = "0.1"
 ```
 
-`li_fn!` accepts either an identifier or a string literal:
+```rust,no_run
+// 1. Declare the function signature
+type MessageBoxA = unsafe extern "system" fn(
+    hwnd: *mut core::ffi::c_void,
+    text: *const u8,
+    caption: *const u8,
+    utype: u32,
+) -> i32;
+
+// 2. Resolve + call — nothing appears in the import table
+let msgbox: MessageBoxA = unsafe {
+    lazy_importer::li_fn!("MessageBoxA")
+        .get::<MessageBoxA>()
+        .expect("MessageBoxA should resolve")
+};
+
+unsafe {
+    msgbox(
+        core::ptr::null_mut(),
+        b"Hello\0".as_ptr(),
+        b"lazy_importer\0".as_ptr(),
+        0,
+    );
+}
+```
+
+## Usage
+
+### Resolve a function globally
+
+`li_fn!` takes a string literal. `get` casts the resolved address to your
+function pointer type and follows forwarded exports.
 
 ```rust,no_run
 type GetCurrentProcessId = unsafe extern "system" fn() -> u32;
 
-let function = unsafe {
+let f: GetCurrentProcessId = unsafe {
     lazy_importer::li_fn!("GetCurrentProcessId")
         .get::<GetCurrentProcessId>()
         .expect("GetCurrentProcessId should resolve")
 };
 ```
 
-## Modules
+Use `.address()` when you only need the raw pointer (still follows forwarded
+exports):
 
-Resolve a loaded module by name:
+```rust,no_run
+let addr = lazy_importer::li_fn!("GetCurrentProcessId")
+    .address()
+    .expect("GetCurrentProcessId should resolve");
+```
+
+### Resolve without following forwarded exports
+
+`raw_address` returns the export RVA directly — forwarded exports are **not**
+resolved to their final target.
+
+```rust,no_run
+let raw = lazy_importer::li_fn!("GetCurrentProcessId").raw_address();
+```
+
+### Resolve a loaded module
 
 ```rust,no_run
 let kernel32 = lazy_importer::li_module!("KERNEL32.DLL")
     .get()
     .expect("kernel32 should be loaded");
+
+// Use the handle directly
+use lazy_importer::ModuleHandle;
+let handle: ModuleHandle = kernel32;
+let ptr: *mut core::ffi::c_void = handle.as_ptr();
 ```
 
-By default, every `get` call resolves the module again. Use `cached` when you
-want all `li_module!` calls for the same module name to reuse the first
-successfully resolved module handle. With the `case-insensitive` feature, module
-cache keys fold ASCII case too:
+### Resolve inside a known module
+
+When you already have a `ModuleHandle`, resolve the export in that specific
+module. `address_in` follows forwarded exports; `raw_address_in` does not.
 
 ```rust,no_run
-let kernel32 = lazy_importer::li_module!("KERNEL32.DLL")
-    .cached()
-    .get()
-    .expect("kernel32 should be loaded");
-```
-
-## Functions
-
-Resolve a function across all loaded modules:
-
-```rust,no_run
-type GetCurrentProcessId = unsafe extern "system" fn() -> u32;
-
-let function = lazy_importer::li_fn!(GetCurrentProcessId);
-let address = function.address().expect("export should resolve");
-let typed = unsafe {
-    function
-        .get::<GetCurrentProcessId>()
-        .expect("export should resolve")
-};
-```
-
-`address` and `get` follow forwarded exports by default. By default, each call
-resolves the function again. Use `cached` when you want all `li_fn!` calls for
-the same export name to reuse the first successfully resolved global address.
-With the `case-insensitive` feature, export cache keys fold ASCII case too:
-
-```rust,no_run
-type GetCurrentProcessId = unsafe extern "system" fn() -> u32;
-
-let function = unsafe {
-    lazy_importer::li_fn!(GetCurrentProcessId)
-        .cached()
-        .get::<GetCurrentProcessId>()
-        .expect("export should resolve")
-};
-```
-
-Use `raw_address` when you need the raw export address without following
-forwarded exports. `raw_address` always resolves fresh; `cached` only affects
-the forwarded global lookup used by `address` and `get`.
-
-## Known Modules
-
-Resolve inside a module handle you already have:
-
-```rust,no_run
-type GetCurrentProcessId = unsafe extern "system" fn() -> u32;
-
 let kernel32 = lazy_importer::li_module!("KERNEL32.DLL")
     .get()
     .expect("kernel32 should be loaded");
 
-let address = lazy_importer::li_fn!("GetCurrentProcessId")
+// With forwarded-export resolution
+let addr = lazy_importer::li_fn!("GetCurrentProcessId")
     .address_in(kernel32)
     .expect("export should resolve in kernel32");
 
-let function = unsafe {
+// Raw — no forwarded-export resolution
+let raw = lazy_importer::li_fn!("GetCurrentProcessId")
+    .raw_address_in(kernel32)
+    .expect("export should exist in kernel32");
+
+// Cast to a function pointer type in one step
+type GetCurrentProcessId = unsafe extern "system" fn() -> u32;
+let f: GetCurrentProcessId = unsafe {
     lazy_importer::li_fn!("GetCurrentProcessId")
         .get_in::<GetCurrentProcessId>(kernel32)
         .expect("export should resolve in kernel32")
 };
 ```
 
-`address_in` and `get_in` follow forwarded exports. Use `raw_address_in` for the
-raw in-module export address. In-module lookups are not stored in the global
-cache because they depend on the module handle passed to the call.
+### Caching
 
-## Caching
+By default every lookup walks the PEB again. Chain `.cached()` to store the
+first successful result in a process-wide lock-free table, keyed by the name
+you passed to the macro.
 
-Calling `cached` opts into a process-wide cache shared by all macro call sites
-with the same module or export name. Modules and functions use separate caches,
-and only successful `LazyModule::get`, `LazyFunction::address`, and
-`LazyFunction::get` lookups are stored.
+```rust,no_run
+// Module cache — first .get() resolves; subsequent calls hit the cache
+let kernel32 = lazy_importer::li_module!("KERNEL32.DLL")
+    .cached()
+    .get()
+    .expect("kernel32 should be loaded");
 
-Cache keys are derived from the module or export name at compile time and follow
-the crate's active case-sensitivity setting. The cache stores keys and resolved
-pointers, not the original strings.
+// Function cache — works for .address() and .get()
+type GetCurrentProcessId = unsafe extern "system" fn() -> u32;
+let f: GetCurrentProcessId = unsafe {
+    lazy_importer::li_fn!("GetCurrentProcessId")
+        .cached()
+        .get::<GetCurrentProcessId>()
+        .expect("GetCurrentProcessId should resolve")
+};
+```
 
-The cache is a fixed-size `no_std` table. If the table has no available slot, the
-lookup still returns the freshly resolved value, but that value is not stored for
-future calls.
+- Modules and functions use **separate** caches.
+- Cache keys are derived from the name at compile time; the cache stores only
+  resolved pointers, never strings.
+- The cache is a fixed-size `no_std` table (256 slots, linear probing). If full,
+  the lookup still succeeds — it just isn't stored.
+- `raw_address` and `raw_address_in` **never** use the cache.
 
-## Case Sensitivity
+### Case-insensitive hashing
 
-By default, hashing is case-sensitive. Enable `case-insensitive` if you want
-module and export hashing to fold ASCII case:
+Enable the `case-insensitive` feature to fold ASCII case when hashing module
+and export names:
 
 ```toml
+[dependencies]
 lazy_importer = { version = "0.1", features = ["case-insensitive"] }
 ```
 
-## Platform Behavior
+```rust,no_run
+// With case-insensitive enabled, both resolve to the same module
+let a = lazy_importer::li_module!("KERNEL32.DLL").cached().get();
+let b = lazy_importer::li_module!("kernel32.dll").cached().get();
+assert_eq!(a.unwrap().as_ptr(), b.unwrap().as_ptr());
+```
 
-On supported Windows targets, resolution walks the PEB loader list and parses PE
-export directories directly. Non-Windows targets fail at compile time.
+## API Reference
+
+### Macros
+
+| Macro | Returns | Description |
+|-------|---------|-------------|
+| `li_fn!("Name")` | `LazyFunction<HASH>` | Resolves the named export across all loaded modules |
+| `li_module!("NAME")` | `LazyModule<HASH>` | Resolves the named module in the PEB loader list |
+
+### `LazyFunction<OHP>`
+
+| Method | Returns | Follows forwarded? | Uses cache? |
+|--------|---------|--------------------|-------------|
+| `.address()` | `Option<NonNull<c_void>>` | Yes | If `.cached()` |
+| `.raw_address()` | `Option<NonNull<c_void>>` | No | Never |
+| `.get::<F>()` | `Option<F>` | Yes | If `.cached()` |
+| `.address_in(m)` | `Option<NonNull<c_void>>` | Yes | Never |
+| `.raw_address_in(m)` | `Option<NonNull<c_void>>` | No | Never |
+| `.get_in::<F>(m)` | `Option<F>` | Yes | Never |
+| `.cached()` | `Self` | — | Enables global cache |
+
+### `LazyModule<OHP>`
+
+| Method | Returns | Uses cache? |
+|--------|---------|-------------|
+| `.get()` | `Option<ModuleHandle>` | If `.cached()` |
+| `.cached()` | `Self` | Enables global cache |
+
+### `ModuleHandle`
+
+| Method | Returns |
+|--------|---------|
+| `.from_ptr(p)` | `Option<Self>` |
+| `.as_ptr()` | `*mut c_void` |
+
+## How It Works
+
+```text
+┌─────────────────────────────────────────────────┐
+│                 Your Process                      │
+│                                                   │
+│  li_fn!("VirtualAlloc").get::<F>()                │
+│  ├─ hash("VirtualAlloc") at compile time          │
+│  ├─ walk PEB → InLoadOrderModuleList              │
+│  │   ├─ kernel32.dll → parse PE export directory  │
+│  │   ├─ ntdll.dll    → parse PE export directory  │
+│  │   └─ ...                                       │
+│  ├─ compare export name hashes                    │
+│  ├─ follow forwarded exports (up to 32 hops)      │
+│  ├─ resolve API-set contracts (api-ms-win-*)      │
+│  └─ return function pointer                       │
+│                                                   │
+│  • No LoadLibrary / GetProcAddress calls          │
+│  • No entries in the binary's import table        │
+│  • Compile-time hash offsets (const-random)        │
+│    randomize the FNV-1a seed per call site        │
+└─────────────────────────────────────────────────┘
+```
+
+## Platform Support
+
+| Architecture | Status |
+|-------------|--------|
+| `x86_64-pc-windows-msvc` | ✅ Full support |
+| `i686-pc-windows-msvc`   | ✅ Full support |
+| `aarch64-pc-windows-msvc`| ✅ Full support |
+| Non-Windows              | ❌ Compile-time error |
+
+Requires Rust **1.85+** (edition 2024).
+
+## Building
+
+Release builds enable **LTO** (`lto = true`) so that resolution code is
+inlined directly into call sites — no separate function shows up in the
+disassembly for `li_fn!` or `li_module!` lookups.
+
+```sh
+cargo build --release
+```
+
+Set `CONST_RANDOM_SEED` for deterministic (reproducible) builds:
+
+```sh
+CONST_RANDOM_SEED=0xDEAD_BEEF cargo build --release
+```
+
+## Testing
+
+```sh
+# Unit tests (requires Windows)
+cargo test
+
+# With case-insensitive feature
+cargo test --features case-insensitive --test '*' --lib
+```
+
+## License
+
+Apache 2.0 — see [LICENSE](LICENSE).
